@@ -407,7 +407,11 @@ function flush(kind){
   if(store.mode!=='cloud')return;
   store.queue=store.queue.then(async()=>{
     try{
-      if(kind==='cfg')await store.appRef.set({cfg:clone(state.cfg),updated:Date.now()});
+      if(store.fb){
+        /* Firestore no admite arrays anidados: se guarda cada documento como texto JSON */
+        if(kind==='cfg')await store.appRef.set({j:JSON.stringify(state.cfg),updated:Date.now()});
+        else await store.weeksRef.doc(kind).set({j:JSON.stringify(state.weeks[kind]),updated:Date.now()});
+      }else if(kind==='cfg')await store.appRef.set({cfg:clone(state.cfg),updated:Date.now()});
       else await store.weeksRef.doc(kind).set(clone(state.weeks[kind]));
     }catch(e){setSv('err');toast('No se pudo guardar. Reintentando…');store.timers[kind]=setTimeout(()=>flush(kind),4000);return}
     if(!store.timers[kind])delete store.dirty[kind];
@@ -482,7 +486,7 @@ function startCloud(db,uid){
     store.appRef.onSnapshot(snap=>{
       clearTimeout(slowT);
       if(snap.exists){
-        const c=snap.data().cfg;
+        const sd=snap.data(),c=sd&&sd.j?JSON.parse(sd.j):sd.cfg;
         if(c&&!store.dirty.cfg&&JSON.stringify(c)!==JSON.stringify(state.cfg)){state.cfg=clone(c);state.ver++;boot()}
         else if(c&&!state.cfg){state.cfg=clone(c);boot()}
       }else if(!snap.metadata.fromCache&&!state.cfg){
@@ -495,7 +499,7 @@ function startCloud(db,uid){
       let ch=false;
       snap.docs.forEach(d=>{
         if(store.dirty[d.id])return;
-        const v=d.data();
+        const dd=d.data(),v=dd&&dd.j?JSON.parse(dd.j):dd;
         if(JSON.stringify(v)!==JSON.stringify(state.weeks[d.id])){state.weeks[d.id]=clone(v);ch=true;if(fixWeek(state.weeks[d.id]))markDirty(d.id)}
       });
       if(ch){state.ver++;if(state.cfg)softRender()}
